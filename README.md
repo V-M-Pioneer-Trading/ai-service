@@ -28,9 +28,9 @@ erroring, the fleet keeps operating on its current knob values.
    - `set_knob(name, value)` — refused locally (never reaching automation-service)
      if `value` falls outside that knob's declared `[min, max]`, or if `name`
      isn't a real knob.
-   - `trigger_replan()` — requests a fleet replan via `POST /planner/replan`.
+   - `trigger_replan()` — requests a fleet replan via `POST /api/automation/v1/planner/replan`.
 4. Once the model returns a final message with no further tool calls (or the
-   iteration cap is hit), the run's outcome is logged via `POST /events` on
+   iteration cap is hit), the run's outcome is logged via `POST /api/automation/v1/events` on
    automation-service: `ai_intervention` if anything was actually applied,
    `ai_no_action` otherwise — always with a non-empty `rationale`.
 
@@ -56,7 +56,7 @@ state to close this gap for longer outages.
 | Env var | Meaning |
 |---|---|
 | `PORT` | Listen port (default `3004`) |
-| `AUTOMATION_SERVICE_URL` | e.g. `http://automation-service:3003` (required) |
+| `AUTOMATION_SERVICE_URL` | e.g. `http://automation-service:3003/api/automation/v1` (required) |
 | `OPENAI_API_KEY` | OpenAI API key (required) |
 | `OPENAI_BASE_URL` | Chat Completions API base URL (default `https://api.openai.com/v1`; overridable for tests/self-hosted-compatible endpoints) |
 | `OPENAI_MODEL` | Model name (default `gpt-4o-mini`) |
@@ -68,10 +68,10 @@ state to close this gap for longer outages.
 The context blob sent to the model includes the triggering anomaly, current
 knob values, recent metrics rollups, and the anomaly digest's own (already
 `NOTABLE_EVENT_TYPES`-filtered) events — deliberately **not**
-`GET /metrics/context`'s unfiltered event list, which has no type restriction
+`GET /api/automation/v1/metrics/context`'s unfiltered event list, which has no type restriction
 and would forward every event's `detail` off-box on every anomaly with no
 redaction beyond automation-service's own "never log token-shaped values"
-convention. `POST /events` is restricted server-side to the `ai_` type
+convention. `POST /api/automation/v1/events` is restricted server-side to the `ai_` type
 namespace, so this service can log its own rationale but can never spoof a
 lifecycle/planner event type.
 

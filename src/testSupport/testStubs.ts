@@ -30,8 +30,11 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
   const app = express();
   app.use(express.json());
 
-  app.get("/planner/knobs", (_req, res) => res.json({ knobs: stub.knobs }));
-  app.put("/planner/knobs/:name", (req, res) => {
+  // Mirrors automation-service's own /api/automation/v1 mount.
+  const apiRouter = express.Router();
+
+  apiRouter.get("/planner/knobs", (_req, res) => res.json({ knobs: stub.knobs }));
+  apiRouter.put("/planner/knobs/:name", (req, res) => {
     const knob = stub.knobs.find((k) => k.name === req.params.name);
     if (knob === undefined) {
       res.status(404).json({ error: { message: "unknown knob" } });
@@ -46,21 +49,23 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
     knob.value = value;
     res.json({ knob });
   });
-  app.post("/planner/replan", (_req, res) => {
+  apiRouter.post("/planner/replan", (_req, res) => {
     stub.replanCalls++;
     res.json({ requested: true });
   });
-  app.post("/events", (req, res) => {
+  apiRouter.post("/events", (req, res) => {
     stub.events.push({ type: req.body.type, detail: req.body.detail ?? {} });
     res.status(201).json({ ok: true });
   });
-  app.get("/metrics/context", (_req, res) => res.json({ rollups: [], events: [] }));
-  app.get("/anomalies/digest", (_req, res) => res.json({ anomalies: stub.anomalies, events: [] }));
+  apiRouter.get("/metrics/context", (_req, res) => res.json({ rollups: [], events: [] }));
+  apiRouter.get("/anomalies/digest", (_req, res) => res.json({ anomalies: stub.anomalies, events: [] }));
+
+  app.use("/api/automation/v1", apiRouter);
 
   const server = http.createServer(app);
   server.listen(0);
   const { port } = server.address() as AddressInfo;
-  stub.url = `http://localhost:${port}`;
+  stub.url = `http://localhost:${port}/api/automation/v1`;
   stub.close = () => new Promise((resolve) => server.close(() => resolve()));
 
   return stub;
