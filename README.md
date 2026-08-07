@@ -4,9 +4,36 @@ Anomaly-triggered OpenAI supervisor loop for the SpaceTraders fleet
 ([meta#19](https://github.com/V-M-Pioneer-Trading/meta/issues/19)). Receives
 anomaly webhooks from [automation-service](https://github.com/V-M-Pioneer-Trading/automation-service),
 composes context, and runs a bounded OpenAI tool-use loop whose only real-world
-effects are a knob write within its declared bounds and/or a fleet replan
-trigger. The AI never drives ships directly, and when this service is down or
-erroring, the fleet keeps operating on its current knob values.
+effects are a **policy** knob write within its declared bounds and/or a fleet
+replan trigger. The AI never drives ships directly, and when this service is
+down or erroring, the fleet keeps operating on its current knob values.
+
+## What the supervisor may and may not change
+
+automation-service classifies every knob as `model`, `policy`, or `alert`. This
+service may write **`policy` only** — preferences with no measurable true value,
+like how much to favour mining over contracts, or how much cash to keep in
+reserve.
+
+The other two are deliberately out of reach:
+
+- **`alert`** knobs are the thresholds that decide when something is wrong,
+  *including the anomaly being responded to right now*. `anomaly.errorRateThreshold`
+  can legally be set to `1`, which would stop the error-rate check ever firing
+  again — a perfectly in-bounds way for the supervisor to make its own alarm go
+  away instead of addressing what tripped it.
+- **`model`** knobs describe how the universe behaves (ship speed, revenue per
+  cycle, fuel cost) and are calibrated from the fleet's own flight history.
+  Writing one wouldn't change reality, only what the planner believes about it.
+
+Three things enforce this, in order: the `set_knob` tool's `name` enum is built
+from `GET /planner/knobs?class=policy`, so the model cannot name anything else;
+`executeToolCall` refuses a non-policy name locally if it somehow does; and
+automation-service validates the write again at its own boundary.
+
+The model still *sees* every knob in its context — understanding the fleet's
+configuration is the job. If it believes a threshold is mistuned, the only move
+available is to say so in its rationale, which an operator reads.
 
 ## Flow
 
@@ -21,13 +48,13 @@ erroring, the fleet keeps operating on its current knob values.
    distinct anomaly ids that happen to share a `dedupeKey` (not expected given
    automation-service's cooldown, but not structurally prevented) would each
    get their own supervisor run.
-3. The supervisor fetches current knobs, recent metrics rollups, and the
-   anomaly digest from automation-service, then runs a tool-calling loop
-   (`OPENAI_MODEL`, capped at `MAX_TOOL_ITERATIONS` round-trips) where the
-   model may call:
+3. The supervisor fetches all knobs (for context), the policy knobs (for the
+   tool surface), recent metrics rollups, and the anomaly digest from
+   automation-service, then runs a tool-calling loop (`OPENAI_MODEL`, capped at
+   `MAX_TOOL_ITERATIONS` round-trips) where the model may call:
    - `set_knob(name, value)` — refused locally (never reaching automation-service)
-     if `value` falls outside that knob's declared `[min, max]`, or if `name`
-     isn't a real knob.
+     if `name` isn't a policy knob, or if `value` falls outside its declared
+     `[min, max]`.
    - `trigger_replan()` — requests a fleet replan via `POST /api/automation/v1/planner/replan`.
 4. Once the model returns a final message with no further tool calls (or the
    iteration cap is hit), the run's outcome is logged via `POST /api/automation/v1/events` on
