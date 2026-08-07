@@ -33,7 +33,13 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
   // Mirrors automation-service's own /api/automation/v1 mount.
   const apiRouter = express.Router();
 
-  apiRouter.get("/planner/knobs", (_req, res) => res.json({ knobs: stub.knobs }));
+  // Mirrors automation-service's class filter, which is what narrows the
+  // supervisor's tool surface to policy knobs.
+  apiRouter.get("/planner/knobs", (req, res) => {
+    const requested = req.query.class;
+    const knobs = requested === undefined ? stub.knobs : stub.knobs.filter((k) => k.class === requested);
+    res.json({ knobs });
+  });
   apiRouter.put("/planner/knobs/:name", (req, res) => {
     const knob = stub.knobs.find((k) => k.name === req.params.name);
     if (knob === undefined) {
@@ -105,13 +111,30 @@ export function startOpenAiStub(turns: OpenAiTurn[]): OpenAiStub {
   return stub;
 }
 
+/** A policy knob by default — the only class the supervisor is allowed to write. */
 export function makeKnob(overrides: Partial<Knob> = {}): Knob {
   return {
-    name: "anomaly.consecutiveFailureLimit",
+    name: "mine.failureRetryLimit",
+    class: "policy",
     value: 3,
     default: 3,
     min: 1,
     max: 20,
+    description: "Consecutive failures on one target before the planner gives up on it.",
     ...overrides,
   };
+}
+
+/** An alert threshold — listed for the model's context, never offered as a tool. */
+export function makeAlertKnob(overrides: Partial<Knob> = {}): Knob {
+  return makeKnob({
+    name: "anomaly.errorRateThreshold",
+    class: "alert",
+    value: 0.1,
+    default: 0.1,
+    min: 0,
+    max: 1,
+    description: "Fraction of recent mining events that must be errors before the fleet is flagged as failing.",
+    ...overrides,
+  });
 }

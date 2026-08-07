@@ -17,27 +17,48 @@ export interface SupervisorResult {
 const SYSTEM_PROMPT = [
   "You are an automated supervisor for an unattended SpaceTraders mining fleet.",
   "You are given a fired anomaly plus recent fleet context (metrics rollups, recent",
-  "events, current knob values). You may call set_knob to adjust a tunable planner",
-  "or anomaly-detection knob within its declared [min, max] bounds, and/or",
-  "trigger_replan to ask the fleet to re-plan its current assignments against the",
-  "current knobs. These are your ONLY two effects on the world — you cannot drive",
-  "ships directly. Prefer taking no action over a speculative change when the",
-  "anomaly doesn't clearly call for one. When you are done (with or without taking",
-  "any action), reply with a final plain-text message explaining your reasoning —",
-  "that message is the audit-trail rationale for this run.",
+  "events, current knob values). You may call set_knob to adjust a POLICY knob",
+  "within its declared [min, max] bounds, and/or trigger_replan to ask the fleet to",
+  "re-plan its current assignments against the current knobs. These are your ONLY",
+  "two effects on the world — you cannot drive ships directly.",
+  "",
+  "Knobs come in three kinds, and you can only write one of them:",
+  "POLICY knobs are preferences with no objectively correct value (how much to",
+  "favour mining over contracts, how much cash to keep in reserve). These are yours",
+  "to tune. MODEL knobs describe how the universe behaves (ship speed, revenue per",
+  "cycle, fuel cost); the fleet measures these from its own flight history, so",
+  "changing one would only make the planner believe something false. ALERT knobs",
+  "set the thresholds that decide when something is wrong — including the anomaly",
+  "you are responding to right now. Both are listed for context and neither is",
+  "offered to you as a tool; do not propose changing them. If the honest answer is",
+  "that a threshold is mistuned or a measurement looks wrong, say so in your",
+  "rationale and take no action — an operator reads these.",
+  "",
+  "Prefer taking no action over a speculative change when the anomaly doesn't",
+  "clearly call for one. When you are done (with or without taking any action),",
+  "reply with a final plain-text message explaining your reasoning — that message",
+  "is the audit-trail rationale for this run.",
 ].join(" ");
 
-function buildTools(knobs: Knob[]): ToolDefinition[] {
+/**
+ * The tool surface, built from the policy knobs only. The enum is the first of
+ * three gates: the model can't name a non-policy knob, `executeToolCall`
+ * refuses one if it somehow does, and automation-service validates bounds
+ * again on the write itself.
+ */
+function buildTools(policyKnobs: Knob[]): ToolDefinition[] {
   return [
     {
       type: "function",
       function: {
         name: "set_knob",
-        description: "Set a planner or anomaly-detection knob to a new value, within its declared bounds.",
+        description:
+          "Set a policy knob to a new value, within its declared bounds. Only policy knobs can be set — " +
+          "model knobs are measured from the fleet's own history, and alert thresholds are operator-only.",
         parameters: {
           type: "object",
           properties: {
-            name: { type: "string", enum: knobs.map((k) => k.name) },
+            name: { type: "string", enum: policyKnobs.map((k) => k.name) },
             value: { type: "number" },
           },
           required: ["name", "value"],
@@ -67,13 +88,17 @@ export class Supervisor {
   ) {}
 
   async run(anomaly: Anomaly): Promise<SupervisorResult> {
-    const [knobs, metrics, digest] = await Promise.all([
+    // Two reads, deliberately: the model sees every knob so it can reason about
+    // the fleet's full configuration, but only the policy subset becomes a tool
+    // it can actually call.
+    const [knobs, policyKnobs, metrics, digest] = await Promise.all([
       this.automationService.getKnobs(),
+      this.automationService.getPolicyKnobs(),
       this.automationService.getMetricsContext(),
       this.automationService.getAnomaliesDigest(60),
     ]);
-    const knobsByName = new Map(knobs.map((k) => [k.name, k]));
-    const tools = buildTools(knobs);
+    const writableByName = new Map(policyKnobs.map((k) => [k.name, k]));
+    const tools = buildTools(policyKnobs);
 
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
@@ -103,7 +128,7 @@ export class Supervisor {
       }
 
       for (const call of toolCalls) {
-        const action = await this.executeToolCall(call.function.name, call.function.arguments, knobsByName);
+        const action = await this.executeToolCall(call.function.name, call.function.arguments, writableByName);
         actions.push(action);
         messages.push({
           role: "tool",
@@ -135,7 +160,7 @@ export class Supervisor {
   private async executeToolCall(
     name: string,
     rawArguments: string,
-    knobsByName: Map<string, Knob>
+    writableByName: Map<string, Knob>
   ): Promise<SupervisorAction> {
     if (name === "trigger_replan") {
       await this.automationService.triggerReplan();
@@ -154,9 +179,20 @@ export class Supervisor {
       if (knobName === undefined || value === undefined || !Number.isFinite(value)) {
         return { tool: "set_knob", name: knobName, value, applied: false, reason: "name/value missing or not a finite number" };
       }
-      const knob = knobsByName.get(knobName);
+      // Not in the writable map means either the knob doesn't exist or it isn't
+      // a policy knob. Both are refused here, before any request leaves this
+      // process — the model cannot reach a model or alert knob even if it names
+      // one exactly, so it can never widen the thresholds that would have
+      // reported it failing.
+      const knob = writableByName.get(knobName);
       if (knob === undefined) {
-        return { tool: "set_knob", name: knobName, value, applied: false, reason: `unknown knob "${knobName}"` };
+        return {
+          tool: "set_knob",
+          name: knobName,
+          value,
+          applied: false,
+          reason: `"${knobName}" is not a policy knob this supervisor may write`,
+        };
       }
       // Refused here, before ever reaching automation-service — the model's
       // only side effects on the world are a knob write within bounds or a

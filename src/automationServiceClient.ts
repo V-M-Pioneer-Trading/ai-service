@@ -1,9 +1,19 @@
+/**
+ * `model` knobs describe how the universe behaves and are calibrated from
+ * observation; `alert` knobs decide when something is wrong; `policy` knobs are
+ * preferences with no measurable true value. The supervisor may only write
+ * `policy` — see `getPolicyKnobs`.
+ */
+export type KnobClass = "model" | "policy" | "alert";
+
 export interface Knob {
   name: string;
+  class: KnobClass;
   value: number;
   default: number;
   min: number;
   max: number;
+  description: string;
 }
 
 export interface EventLogEntry {
@@ -62,8 +72,20 @@ export class AutomationServiceClient {
     return res.json() as Promise<T>;
   }
 
+  /** Every knob, for context. Includes ones the supervisor must not write. */
   async getKnobs(): Promise<Knob[]> {
     const { knobs } = await this.call<{ knobs: Knob[] }>("/planner/knobs");
+    return knobs;
+  }
+
+  /**
+   * Only the knobs the supervisor is allowed to write. The filter is applied
+   * server-side rather than here, so the restriction holds even if this client
+   * is wrong — this method exists to make the intent obvious at the call site,
+   * not to be the thing enforcing it.
+   */
+  async getPolicyKnobs(): Promise<Knob[]> {
+    const { knobs } = await this.call<{ knobs: Knob[] }>("/planner/knobs?class=policy");
     return knobs;
   }
 
