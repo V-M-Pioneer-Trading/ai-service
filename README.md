@@ -123,7 +123,6 @@ will require `events:write` on `POST /events` and `planner:advise` on
 `POST /planner/replan` and `PUT /planner/knobs/:name`. The token endpoint it
 comes from arrives with auth-service#11. The token will carry no
 `fleet:control`, so a leaked one cannot arm, pause, abort or move a ship.
-**This PR merges after both.**
 
 automation-service's read routes declare no credential requirement, but the
 token is sent on them too. A `401`/`403` from any route surfaces as an

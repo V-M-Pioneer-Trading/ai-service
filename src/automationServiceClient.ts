@@ -68,15 +68,12 @@ export class AutomationServiceClient {
 
   private async call<T>(path: string, init?: RequestInit): Promise<T> {
     const token = await this.tokens.getToken();
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
-        ...(init?.headers as Record<string, string> | undefined),
-        // Last, so a caller-supplied header can never replace the credential.
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    // Headers is case-insensitive, so a caller's `authorization` is replaced by
+    // set() below rather than joined with it, and a Headers instance keeps its entries.
+    const h = new Headers(init?.headers);
+    if (init?.body && !h.has("Content-Type")) h.set("Content-Type", "application/json");
+    h.set("Authorization", `Bearer ${token}`);
+    const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers: h });
     if (!res.ok) throw new AutomationServiceError(res.status, await parseErrorMessage(res));
     return res.json() as Promise<T>;
   }

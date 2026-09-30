@@ -33,15 +33,19 @@ describe("AutomationServiceClient machine token", () => {
     expect(automationService.authorizations).toEqual(["Bearer token-1", "Bearer token-2"]);
   });
 
-  it("keeps other headers but never lets one replace the Authorization header", async () => {
+  it.each([
+    ["a plain object", () => ({ authorization: "Bearer forged", "X-Extra": "1" })],
+    ["a Headers instance", () => new Headers({ authorization: "Bearer forged", "X-Extra": "1" })],
+  ])("keeps other headers from %s but never lets a lower-case authorization join or replace the real one", async (_name, make) => {
     automationService = startAutomationServiceStub([makeKnob()]);
     const client = new AutomationServiceClient(automationService.url, staticTokenSource());
 
     // call() is private; reach it the way the public methods do.
     await (client as unknown as { call: (p: string, i: RequestInit) => Promise<unknown> }).call("/planner/knobs", {
-      headers: { Authorization: "Bearer forged", "X-Extra": "1" },
+      headers: make(),
     });
 
+    // One value, not "Bearer forged, Bearer <token>".
     expect(automationService.authorizations).toEqual([`Bearer ${TEST_TOKEN}`]);
     expect(automationService.extraHeaders).toEqual(["1"]);
   });
