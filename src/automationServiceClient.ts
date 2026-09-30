@@ -1,3 +1,5 @@
+import type { M2MTokenSource } from "@v-m-pioneer-trading/introspection-client";
+
 /**
  * `model` knobs describe how the universe behaves and are calibrated from
  * observation; `alert` knobs decide when something is wrong; `policy` knobs are
@@ -56,17 +58,22 @@ async function parseErrorMessage(res: Response): Promise<string> {
 }
 
 /**
- * Thin fetch client for automation-service's admin API — same unauthenticated
- * posture command-interface's automationService.js already relies on
- * (automation-service's admin API takes no bearer token).
+ * Thin fetch client for automation-service's admin API. Every request carries
+ * a machine token minted by auth-service (decision 22); the source caches it,
+ * so asking per call is almost always free. A failed mint throws an
+ * M2MTokenError and no request is sent.
  */
 export class AutomationServiceClient {
-  constructor(private baseUrl: string) {}
+  constructor(private baseUrl: string, private tokens: M2MTokenSource) {}
 
   private async call<T>(path: string, init?: RequestInit): Promise<T> {
+    const token = await this.tokens.getToken();
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
-      headers: init?.body ? { "Content-Type": "application/json", ...init.headers } : init?.headers,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        Authorization: `Bearer ${token}`,
+      },
     });
     if (!res.ok) throw new AutomationServiceError(res.status, await parseErrorMessage(res));
     return res.json() as Promise<T>;

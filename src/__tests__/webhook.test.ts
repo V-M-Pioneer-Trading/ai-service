@@ -1,12 +1,14 @@
 import request from "supertest";
 import { createApp } from "../server";
 import { ServiceConfig } from "../config";
-import { AutomationServiceStub, OpenAiStub, makeAlertKnob, makeKnob, startAutomationServiceStub, startOpenAiStub } from "../testSupport/testStubs";
+import { AutomationServiceStub, OpenAiStub, makeAlertKnob, makeKnob, startAutomationServiceStub, startOpenAiStub, staticTokenSource, TEST_TOKEN } from "../testSupport/testStubs";
 
 function makeConfig(automationServiceUrl: string, openaiBaseUrl: string, overrides: Partial<ServiceConfig> = {}): ServiceConfig {
   return {
     port: 0,
     automationServiceUrl,
+    authM2mTokenUrl: "http://auth.invalid/auth/v1/m2m-token",
+    authM2mCallerSecret: "test-caller-secret",
     openaiApiKey: "test-key",
     openaiBaseUrl,
     openaiModel: "gpt-test",
@@ -55,7 +57,7 @@ describe("ai-service webhook boundary", () => {
       { content: "Raised the failure limit because this looks like a transient market blip." },
     ]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
@@ -64,6 +66,10 @@ describe("ai-service webhook boundary", () => {
     expect(automationService.events).toHaveLength(1);
     expect(automationService.events[0].type).toBe("ai_intervention");
     expect(automationService.events[0].detail).toMatchObject({ anomalyId: "anomaly-1" });
+
+    // Reads, the knob write and the event log all carried the machine token.
+    expect(automationService.authorizations.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(automationService.authorizations)).toEqual(new Set([`Bearer ${TEST_TOKEN}`]));
   });
 
   it("refuses an out-of-bounds knob write without ever calling automation-service's PUT endpoint", async () => {
@@ -85,7 +91,7 @@ describe("ai-service webhook boundary", () => {
       { content: "Attempted a change but it was out of bounds; taking no further action." },
     ]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
@@ -123,7 +129,7 @@ describe("ai-service webhook boundary", () => {
       { content: "Could not adjust the threshold; leaving it for an operator." },
     ]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
     expect(res.status).toBe(202);
@@ -137,7 +143,7 @@ describe("ai-service webhook boundary", () => {
     automationService = startAutomationServiceStub([makeKnob(), makeAlertKnob()]);
     openai = startOpenAiStub([{ content: "Nothing to do." }]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
     await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
     const sent = openai.requests[0] as {
@@ -157,7 +163,7 @@ describe("ai-service webhook boundary", () => {
     automationService = startAutomationServiceStub([makeKnob()]);
     openai = startOpenAiStub([{ content: "Nothing here warrants a knob change or a replan." }]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
@@ -187,7 +193,7 @@ describe("ai-service webhook boundary", () => {
       { content: "" },
     ]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 
@@ -200,7 +206,7 @@ describe("ai-service webhook boundary", () => {
     automationService = startAutomationServiceStub([makeKnob()]);
     openai = startOpenAiStub([{ content: "No action needed." }]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
     const payload = makeAnomalyPayload();
 
     const first = await request(app).post("/webhooks/anomaly").send(payload);
@@ -217,7 +223,7 @@ describe("ai-service webhook boundary", () => {
     automationService = startAutomationServiceStub([makeKnob()]);
     openai = startOpenAiStub([{ content: "unused" }]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send({ type: "consecutive_failures" });
 
@@ -236,7 +242,7 @@ describe("ai-service webhook boundary", () => {
       { content: "Requested a replan since the fleet's assignments look stale." },
     ]);
 
-    const { app } = createApp(makeConfig(automationService.url, openai.url));
+    const { app } = createApp(makeConfig(automationService.url, openai.url), staticTokenSource());
 
     const res = await request(app).post("/webhooks/anomaly").send(makeAnomalyPayload());
 

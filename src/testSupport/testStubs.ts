@@ -1,6 +1,7 @@
 import express from "express";
 import http from "http";
 import { AddressInfo } from "net";
+import type { M2MTokenSource } from "@v-m-pioneer-trading/introspection-client";
 import { Knob } from "../automationServiceClient";
 // Not itself a test file (moved out of __tests__/ so jest's default testMatch
 // doesn't pick it up as one) — reusable stub servers shared by the actual
@@ -12,6 +13,10 @@ export interface AutomationServiceStub {
   anomalies: unknown[];
   events: { type: string; detail: Record<string, unknown> }[];
   setKnobCalls: { name: string; value: number }[];
+  // Authorization header of every request received, in order.
+  authorizations: (string | undefined)[];
+  // When set, every request is answered with this status instead of its normal response.
+  rejectWith?: { status: number; message: string };
   replanCalls: number;
   close: () => Promise<void>;
 }
@@ -23,12 +28,21 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
     anomalies: [],
     events: [],
     setKnobCalls: [],
+    authorizations: [],
     replanCalls: 0,
     close: async () => {},
   };
 
   const app = express();
   app.use(express.json());
+  app.use((req, res, next) => {
+    stub.authorizations.push(req.headers.authorization);
+    if (stub.rejectWith !== undefined) {
+      res.status(stub.rejectWith.status).json({ error: { message: stub.rejectWith.message } });
+      return;
+    }
+    next();
+  });
 
   // Mirrors automation-service's own /api/automation/v1 mount.
   const apiRouter = express.Router();
@@ -137,4 +151,18 @@ export function makeAlertKnob(overrides: Partial<Knob> = {}): Knob {
     description: "Fraction of recent mining events that must be errors before the fleet is flagged as failing.",
     ...overrides,
   });
+}
+
+export const TEST_TOKEN = "test-machine-token";
+
+/** A token source that hands back a fixed token and counts how often it was asked. */
+export function staticTokenSource(token: string = TEST_TOKEN): M2MTokenSource & { calls: number } {
+  const source = {
+    calls: 0,
+    async getToken() {
+      source.calls++;
+      return token;
+    },
+  };
+  return source;
 }
