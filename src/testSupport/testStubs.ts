@@ -15,6 +15,8 @@ export interface AutomationServiceStub {
   setKnobCalls: { name: string; value: number }[];
   // Authorization header of every request received, in order.
   authorizations: (string | undefined)[];
+  // X-Extra header of every request received (for header-merging tests).
+  extraHeaders: (string | undefined)[];
   // When set, every request is answered with this status instead of its normal response.
   rejectWith?: { status: number; message: string };
   replanCalls: number;
@@ -29,6 +31,7 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
     events: [],
     setKnobCalls: [],
     authorizations: [],
+    extraHeaders: [],
     replanCalls: 0,
     close: async () => {},
   };
@@ -37,6 +40,7 @@ export function startAutomationServiceStub(initialKnobs: Knob[]): AutomationServ
   app.use(express.json());
   app.use((req, res, next) => {
     stub.authorizations.push(req.headers.authorization);
+    stub.extraHeaders.push(req.headers["x-extra"] as string | undefined);
     if (stub.rejectWith !== undefined) {
       res.status(stub.rejectWith.status).json({ error: { message: stub.rejectWith.message } });
       return;

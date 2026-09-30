@@ -72,6 +72,8 @@ export class AutomationServiceClient {
       ...init,
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers as Record<string, string> | undefined),
+        // Last, so a caller-supplied header can never replace the credential.
         Authorization: `Bearer ${token}`,
       },
     });

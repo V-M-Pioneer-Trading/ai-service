@@ -20,8 +20,10 @@ export async function fetchStartupToken(
       log.error("auth-service did not recognise this caller (check AUTH_M2M_CALLER_SECRET); exiting");
       return "unknown-caller";
     }
-    const kind = err instanceof M2MTokenError ? err.kind : "error";
-    log.warn(`machine token not fetched at startup (${kind}); will retry on first use`);
+    // An M2MTokenError's message is guaranteed free of the secret, the token and
+    // any response body; anything else could carry anything, so only its name.
+    const why = err instanceof M2MTokenError ? `${err.kind}: ${err.message}` : err instanceof Error ? err.name : "unknown error";
+    log.warn(`machine token not fetched at startup (${why}); will retry on first use`);
     return "unavailable";
   }
 }

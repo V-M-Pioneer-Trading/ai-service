@@ -26,10 +26,24 @@ const requireEnv = (name: string): string => {
   return value;
 };
 
+const requireHttpUrl = (name: string): string => {
+  const value = requireEnv(name);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an http(s) URL`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${name} must be an http(s) URL`);
+  }
+  return value;
+};
+
 export const configFromEnv = (): ServiceConfig => ({
   port: Number(process.env.PORT ?? 3004),
   automationServiceUrl: requireEnv("AUTOMATION_SERVICE_URL"),
-  authM2mTokenUrl: requireEnv("AUTH_M2M_TOKEN_URL"),
+  authM2mTokenUrl: requireHttpUrl("AUTH_M2M_TOKEN_URL"),
   authM2mCallerSecret: requireEnv("AUTH_M2M_CALLER_SECRET"),
   openaiApiKey: requireEnv("OPENAI_API_KEY"),
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",

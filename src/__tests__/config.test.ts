@@ -29,6 +29,19 @@ describe("configFromEnv", () => {
     expect(() => configFromEnv()).toThrow(`${name} must be set`);
   });
 
+  it.each(["not a url", "localhost:3005/auth/v1/m2m-token", "ftp://auth/x", "file:///etc/passwd"])(
+    "rejects AUTH_M2M_TOKEN_URL %j that is not an http(s) URL",
+    (value) => {
+      process.env.AUTH_M2M_TOKEN_URL = value;
+      expect(() => configFromEnv()).toThrow("AUTH_M2M_TOKEN_URL must be an http(s) URL");
+    }
+  );
+
+  it("accepts an https AUTH_M2M_TOKEN_URL", () => {
+    process.env.AUTH_M2M_TOKEN_URL = "https://auth.example.com/auth/v1/m2m-token";
+    expect(configFromEnv().authM2mTokenUrl).toBe("https://auth.example.com/auth/v1/m2m-token");
+  });
+
   it.each(["AUTH_M2M_TOKEN_URL", "AUTH_M2M_CALLER_SECRET"])("fails loudly when %s is empty", (name) => {
     process.env[name] = "";
     expect(() => configFromEnv()).toThrow(`${name} must be set`);
