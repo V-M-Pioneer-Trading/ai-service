@@ -3,7 +3,7 @@ import { AnomalyDedupe } from "../dedupe";
 import { HourlyReviewScheduler } from "../hourlyReviewScheduler";
 import { OpenAiClient } from "../openaiClient";
 import { Supervisor } from "../supervisor";
-import { AutomationServiceStub, OpenAiStub, makeKnob, startAutomationServiceStub, startOpenAiStub } from "../testSupport/testStubs";
+import { AutomationServiceStub, OpenAiStub, makeKnob, startAutomationServiceStub, startOpenAiStub, staticTokenSource } from "../testSupport/testStubs";
 
 function anomaly(id: string) {
   return {
@@ -29,7 +29,7 @@ describe("ai-service hourly review", () => {
     automationService.anomalies = [anomaly("a1"), anomaly("a2")];
     openai = startOpenAiStub([{ content: "No action needed." }]);
 
-    const automationClient = new AutomationServiceClient(automationService.url);
+    const automationClient = new AutomationServiceClient(automationService.url, staticTokenSource());
     const openaiClient = new OpenAiClient("test-key", openai.url, "gpt-test");
     const dedupe = new AnomalyDedupe();
     const supervisor = new Supervisor(automationClient, openaiClient, 5);
@@ -52,7 +52,7 @@ describe("ai-service hourly review", () => {
     automationService.anomalies = [anomaly("a1")];
     // No OpenAI stub started — the fetch to it will fail outright, simulating
     // a down/unreachable OpenAI API.
-    const automationClient = new AutomationServiceClient(automationService.url);
+    const automationClient = new AutomationServiceClient(automationService.url, staticTokenSource());
     const openaiClient = new OpenAiClient("test-key", "http://127.0.0.1:1", "gpt-test");
     const dedupe = new AnomalyDedupe();
     const supervisor = new Supervisor(automationClient, openaiClient, 5);

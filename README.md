@@ -84,6 +84,8 @@ state to close this gap for longer outages.
 |---|---|
 | `PORT` | Listen port (default `3004`) |
 | `AUTOMATION_SERVICE_URL` | e.g. `http://automation-service:3003/api/automation/v1` (required) |
+| `AUTH_M2M_TOKEN_URL` | auth-service's machine-token route, e.g. `http://localhost:3005/auth/v1/m2m-token` (required) |
+| `AUTH_M2M_CALLER_SECRET` | This service's own secret for that route, sent as `X-M2M-Caller-Secret` (required; never logged) |
 | `OPENAI_API_KEY` | OpenAI API key (required) |
 | `OPENAI_BASE_URL` | Chat Completions API base URL (default `https://api.openai.com/v1`; overridable for tests/self-hosted-compatible endpoints) |
 | `OPENAI_MODEL` | Model name (default `gpt-4o-mini`) |
@@ -102,9 +104,35 @@ convention. `POST /api/automation/v1/events` is restricted server-side to the `a
 namespace, so this service can log its own rationale but can never spoof a
 lifecycle/planner event type.
 
-This service never holds a SpaceTraders token — automation-service's admin API
-(which this calls) is itself unauthenticated by design, same posture
-command-interface already relies on.
+This service never holds a SpaceTraders token.
+
+## Authenticating to automation-service
+
+Every call to automation-service carries `Authorization: Bearer <token>`, a
+Clerk machine token minted by auth-service
+([decision 22](https://github.com/V-M-Pioneer-Trading/meta/blob/main/docs/design/auth-design.md#22-auth-service-mints-every-machine-token)).
+This service holds no Clerk key: it proves who it is to auth-service with
+`AUTH_M2M_CALLER_SECRET`, and `createCentralM2MTokenSource` from
+`@v-m-pioneer-trading/introspection-client` caches the token and refreshes it
+halfway through its life.
+
+This Machine's token will carry `events:write` and `planner:advise`, which is
+exactly what this service needs. Those requirements do not exist yet: they
+arrive with meta#59 step 4 (the automation-service route-scopes PR), which
+will require `events:write` on `POST /events` and `planner:advise` on
+`POST /planner/replan` and `PUT /planner/knobs/:name`. The token endpoint it
+comes from arrives with auth-service#11. The token will carry no
+`fleet:control`, so a leaked one cannot arm, pause, abort or move a ship.
+
+automation-service's read routes declare no credential requirement, but the
+token is sent on them too. A `401`/`403` from any route surfaces as an
+`AutomationServiceError`.
+
+At startup the token is fetched once before the service listens. If auth-service
+answers that it does not recognise this caller (wrong or unregistered secret),
+the service logs that and exits 1. Any other failure (auth-service down or
+slow) is logged on one line and the service starts anyway, fetching the token on
+first use.
 
 ## Develop
 
@@ -116,5 +144,5 @@ the OpenAI API with local HTTP servers and drive the real Express app through
 ```bash
 npm install
 npm test        # jest + supertest through the webhook boundary, stub HTTP servers
-npm run dev      # build + start (needs AUTOMATION_SERVICE_URL + OPENAI_API_KEY)
+npm run dev      # build + start (needs AUTOMATION_SERVICE_URL, AUTH_M2M_TOKEN_URL, AUTH_M2M_CALLER_SECRET, OPENAI_API_KEY)
 ```

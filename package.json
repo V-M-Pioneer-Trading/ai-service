@@ -14,6 +14,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@v-m-pioneer-trading/introspection-client": "https://github.com/V-M-Pioneer-Trading/ts-introspection-client/releases/download/v1.2.0/v-m-pioneer-trading-introspection-client-1.2.0.tgz",
     "express": "^4.21.2"
   },
   "devDependencies": {

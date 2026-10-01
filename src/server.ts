@@ -1,9 +1,11 @@
 import express from "express";
+import { M2MTokenSource, createCentralM2MTokenSource } from "@v-m-pioneer-trading/introspection-client";
 import { Anomaly, AutomationServiceClient } from "./automationServiceClient";
 import { ServiceConfig, configFromEnv } from "./config";
 import { AnomalyDedupe } from "./dedupe";
 import { HourlyReviewScheduler } from "./hourlyReviewScheduler";
 import { OpenAiClient } from "./openaiClient";
+import { fetchStartupToken } from "./startupToken";
 import { Supervisor } from "./supervisor";
 
 /** Express 4 does not forward async-handler rejections to error middleware on its own. */
@@ -23,11 +25,11 @@ function isValidAnomalyPayload(body: unknown): body is {
   return typeof b.id === "string" && typeof b.type === "string" && typeof b.dedupeKey === "string" && typeof b.detectedAt === "string";
 }
 
-export function createApp(config: ServiceConfig) {
+export function createApp(config: ServiceConfig, tokens: M2MTokenSource) {
   const app = express();
   app.use(express.json());
 
-  const automationService = new AutomationServiceClient(config.automationServiceUrl);
+  const automationService = new AutomationServiceClient(config.automationServiceUrl, tokens);
   const openai = new OpenAiClient(config.openaiApiKey, config.openaiBaseUrl, config.openaiModel);
   const supervisor = new Supervisor(automationService, openai, config.maxToolIterations);
   const dedupe = new AnomalyDedupe();
@@ -90,9 +92,13 @@ export function createApp(config: ServiceConfig) {
 
 if (require.main === module) {
   const config = configFromEnv();
-  const { app, hourlyReview } = createApp(config);
-  hourlyReview.start();
-  app.listen(config.port, () => {
-    console.log(`ai-service listening on http://localhost:${config.port}`);
+  const tokens = createCentralM2MTokenSource({ url: config.authM2mTokenUrl, secret: config.authM2mCallerSecret });
+  const { app, hourlyReview } = createApp(config, tokens);
+  void fetchStartupToken(tokens).then((outcome) => {
+    if (outcome === "unknown-caller") process.exit(1);
+    hourlyReview.start();
+    app.listen(config.port, () => {
+      console.log(`ai-service listening on http://localhost:${config.port}`);
+    });
   });
 }
