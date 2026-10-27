@@ -15,3 +15,9 @@ AI supervisor. Receives automation-service anomaly webhooks, asks OpenAI (tool u
 - Calls: automation-service, auth-service `POST /auth/v1/m2m-token`, OpenAI.
 - Called by: automation-service (webhook).
 - Port 3004. No DB. No CI, no ESLint. Dockerfile `node:22-alpine` with `npm install`; `engines` says ≥ 18.
+
+## Reference docs
+
+- `README.md` "Configuration": read when deploying.
+- `README.md` "Flow", "What's forwarded to OpenAI": read when changing what the supervisor sends or does.
+- `README.md` "Authenticating to automation-service": read when changing M2M.

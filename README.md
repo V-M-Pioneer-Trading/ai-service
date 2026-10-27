@@ -116,13 +116,11 @@ This service holds no Clerk key: it proves who it is to auth-service with
 `@v-m-pioneer-trading/introspection-client` caches the token and refreshes it
 halfway through its life.
 
-This Machine's token will carry `events:write` and `planner:advise`, which is
-exactly what this service needs. Those requirements do not exist yet: they
-arrive with meta#59 step 4 (the automation-service route-scopes PR), which
-will require `events:write` on `POST /events` and `planner:advise` on
-`POST /planner/replan` and `PUT /planner/knobs/:name`. The token endpoint it
-comes from arrives with auth-service#11. The token will carry no
-`fleet:control`, so a leaked one cannot arm, pause, abort or move a ship.
+This Machine's token carries `events:write` and `planner:advise`, which is
+exactly what this service needs. automation-service requires `events:write` on
+`POST /events` and `planner:advise` on `POST /planner/replan` and
+`PUT /planner/knobs/:name`. The token carries no `fleet:control`, so a leaked
+one cannot arm, pause, abort or move a ship.
 
 automation-service's read routes declare no credential requirement, but the
 token is sent on them too. A `401`/`403` from any route surfaces as an
