@@ -124,6 +124,8 @@ will require `events:write` on `POST /events` and `planner:advise` on
 comes from arrives with auth-service#11. The token will carry no
 `fleet:control`, so a leaked one cannot arm, pause, abort or move a ship.
 
+Correction (2026-10-29): both scopes now exist: automation-service defines and enforces `events:write` and `planner:advise` on `POST /events` and the planner routes, and auth-service serves `POST /auth/v1/m2m-token`, see ../automation-service/src/auth.ts:28,34, ../automation-service/src/server.ts:254-255,463,522,577, ../auth-service/src/controllers/m2m.controller.ts:22.
+
 automation-service's read routes declare no credential requirement, but the
 token is sent on them too. A `401`/`403` from any route surfaces as an
 `AutomationServiceError`.
